@@ -15,10 +15,13 @@ module.exports = async (request, response) => {
         return response.status(400).json({ message: '缺少地址参数' });
     }
 
+    // --- 新增日志 ---
+    console.log(`[API_LOG] 收到查询请求, 地址: "${address}"`);
+
     // 3. 从服务器的环境变量中安全地获取 API Key
     const apiKey = process.env.GAODE_API_KEY;
     if (!apiKey) {
-        console.error("服务端错误：未配置GAODE_API_KEY环境变量");
+        console.error("[SERVER_ERROR] 服务端错误：未在环境变量中配置GAODE_API_KEY");
         return response.status(500).json({ message: '服务器配置错误' });
     }
     
@@ -30,7 +33,20 @@ module.exports = async (request, response) => {
         const apiResponse = await fetch(gaodeUrl);
         const data = await apiResponse.json();
 
-        // 6. 处理高德返回的数据
+        // 6. --- 增强的错误处理 ---
+        // 检查高德返回的状态码，'0'代表请求失败
+        if (data.status === '0') {
+            console.error(`[GAODE_API_ERROR] 高德API返回错误: ${data.info} (错误码: ${data.infocode})`);
+            
+            // 根据常见的错误码，返回更友好的提示给前端
+            let userMessage = `地图服务返回错误: ${data.info}`;
+            if (data.infocode === "10001") { // 10001 是 key 无效的错误码
+                userMessage = "地图服务API Key配置无效，请检查您在后台设置的Key是否正确。";
+            }
+            return response.status(400).json({ message: userMessage });
+        }
+        
+        // 7. 处理高德返回的成功数据
         if (data.status === '1' && data.pois && data.pois.length > 0) {
             const poi = data.pois[0]; // 取最匹配的结果
             const province = poi.pname || ''; // 省
@@ -40,7 +56,7 @@ module.exports = async (request, response) => {
 
             const completedAddress = `${province}${city}${district} ${detailAddress}`;
 
-            // 7. 将处理好的结果返回给前端
+            // 8. 将处理好的结果返回给前端
             return response.status(200).json({ completedAddress: completedAddress.trim() });
 
         } else {
@@ -49,8 +65,8 @@ module.exports = async (request, response) => {
         }
 
     } catch (error) {
-        console.error("调用高德API时出错:", error);
-        return response.status(500).json({ message: '调用地图服务时出错' });
+        console.error("[SERVER_CATCH_ERROR] 调用高德API时捕获到异常:", error);
+        return response.status(500).json({ message: '服务器内部错误，无法连接地图服务。' });
     }
 };
 
