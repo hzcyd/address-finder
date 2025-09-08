@@ -1,10 +1,12 @@
 // 这是在后端（服务器）运行的代码
 // 它会接收前端的请求，然后用安全的Key去调用高德API
 
-export default async function handler(request, response) {
+// 使用 module.exports 导出函数，以获得更好的兼容性
+module.exports = async (request, response) => {
     // 1. 只接受 POST 请求
     if (request.method !== 'POST') {
-        return response.status(405).json({ message: '仅支持POST方法' });
+        response.setHeader('Allow', ['POST']);
+        return response.status(405).json({ message: `方法 ${request.method} 不被允许` });
     }
 
     // 2. 从请求体中获取地址
@@ -31,15 +33,15 @@ export default async function handler(request, response) {
         // 6. 处理高德返回的数据
         if (data.status === '1' && data.pois && data.pois.length > 0) {
             const poi = data.pois[0]; // 取最匹配的结果
-            const province = poi.pname; // 省
-            const city = poi.cityname; // 市
-            const district = poi.adname;   // 区
-            const detailAddress = poi.address; // 详细地址（通常是街道和门牌号）
+            const province = poi.pname || ''; // 省
+            const city = poi.cityname || ''; // 市
+            const district = poi.adname || '';   // 区
+            const detailAddress = poi.address || ''; // 详细地址（通常是街道和门牌号）
 
             const completedAddress = `${province}${city}${district} ${detailAddress}`;
 
             // 7. 将处理好的结果返回给前端
-            return response.status(200).json({ completedAddress });
+            return response.status(200).json({ completedAddress: completedAddress.trim() });
 
         } else {
             // 如果高德未返回有效结果
@@ -50,4 +52,5 @@ export default async function handler(request, response) {
         console.error("调用高德API时出错:", error);
         return response.status(500).json({ message: '调用地图服务时出错' });
     }
-}
+};
+
