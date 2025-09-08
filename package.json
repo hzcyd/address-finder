@@ -1,0 +1,11 @@
+{
+  "name": "secure-address-lookup",
+  "version": "1.0.0",
+  "description": "一个使用后端代理安全查询地址的应用。",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"请使用 Vercel CLI (vercel dev) 来进行本地开发\""
+  },
+  "author": "",
+  "license": "ISC"
+}
