@@ -1,5 +1,5 @@
 // 这是在后端（服务器）运行的代码
-// 它采用两步查询法，以获得更精确的街道级地址
+// 它采用两步查询法，并优化了最终地址的拼接逻辑
 
 module.exports = async (request, response) => {
     if (request.method !== 'POST') {
@@ -29,10 +29,9 @@ module.exports = async (request, response) => {
         }
 
         const poi = textSearchData.pois[0];
-        const location = poi.location; // 获取经纬度，例如 "116.405285,39.904989"
+        const location = poi.location; // 获取经纬度
 
         if (!location) {
-             // 如果第一步就没有坐标，直接返回一个拼接的结果
             const simpleAddress = `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''} ${poi.address || ''}`;
             return response.status(200).json({ completedAddress: simpleAddress.trim() });
         }
@@ -49,26 +48,39 @@ module.exports = async (request, response) => {
         const regeocode = regeoData.regeocode;
         const addressComponent = regeocode.addressComponent;
         
+        // --- 步骤 3: 智能拼接最终地址 (优化版) ---
+        // 目标：补全官方的省市区街道，并与用户输入的具体地址无缝衔接，避免重复。
         const province = addressComponent.province || '';
-        const city = Array.isArray(addressComponent.city) ? (province) : (addressComponent.city || ''); // 处理直辖市city返回空数组的情况
+        const city = Array.isArray(addressComponent.city) ? (province) : (addressComponent.city || '');
         const district = addressComponent.district || '';
-        const township = addressComponent.township || ''; // 街道信息
+        const township = addressComponent.township || '';
 
-        // --- 步骤 3: 智能拼接最终地址 ---
-        // 我们的目标是：补全官方的省市区和街道，同时保留用户输入的具体门牌号等信息
-        
-        // 从用户原始输入中提取出"市"之后的部分，作为详细地址
-        let userInputDetail = address;
-        const cityInUserInput = city.replace('市', '');
-        const cityIndex = address.indexOf(cityInUserInput);
-        if (cityIndex > -1) {
-            userInputDetail = address.substring(cityIndex + cityInUserInput.length);
-        }
-        
+        // 从用户原始输入中，移除已知的省、市、区信息，得到最纯粹的详细地址。
+        let detailedAddress = address.trim();
+
+        const removePrefix = (text, prefix) => {
+            if (prefix && text.startsWith(prefix)) {
+                return text.substring(prefix.length);
+            }
+            return text;
+        };
+
+        // 依次、精确地移除前缀
+        detailedAddress = removePrefix(detailedAddress, province);
+        detailedAddress = removePrefix(detailedAddress, city);
+        detailedAddress = removePrefix(detailedAddress, district);
+        detailedAddress = removePrefix(detailedAddress, township);
+
+        // 有些用户输入可能不带单位，比如输入"盐城东进路"，API返回"盐城市"，也需要移除
+        detailedAddress = removePrefix(detailedAddress, city.replace('市', ''));
+        detailedAddress = removePrefix(detailedAddress, district.replace(/[区县市]/g, ''));
+
+
         // 组合成最终地址
-        const finalAddress = `${province}${city}${district}${township} ${userInputDetail}`;
+        const officialPart = `${province}${city}${district}${township}`;
+        const finalAddress = `${officialPart} ${detailedAddress.trim()}`.trim();
 
-        return response.status(200).json({ completedAddress: finalAddress.trim() });
+        return response.status(200).json({ completedAddress: finalAddress });
 
     } catch (error) {
         console.error("[API_CATCH_ERROR] 调用高德API时捕获到异常:", error);
