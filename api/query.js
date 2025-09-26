@@ -1,63 +1,74 @@
-// 这是在后端（服务器）运行的代码
-// 它采用两步查询法，并优化了最终地址的拼接逻辑
+// Vercel Serverless Function
+// 引入 fetch，如果在 Node.js 18+ 环境中可以不写，但为了兼容性写上更稳妥
+const fetch = require('node-fetch');
 
-module.exports = async (request, response) => {
-    if (request.method !== 'POST') {
-        response.setHeader('Allow', ['POST']);
-        return response.status(405).json({ message: `方法 ${request.method} 不被允许` });
+// 使用 module.exports 以确保与 Vercel 的 Node.js 环境最大兼容
+module.exports = async (req, res) => {
+    // --- CORS 跨域配置 ---
+    // 允许来自任何源的请求，方便本地开发和线上部署
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // 浏览器在发送正式请求前会发送一个 OPTIONS "预检"请求，我们直接返回成功
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
     }
 
-    const { address } = request.body;
-    if (!address) {
-        return response.status(400).json({ message: '缺少地址参数' });
-    }
-
+    // --- 主逻辑 ---
+    const { address } = req.query;
     const apiKey = process.env.GAODE_API_KEY;
+
     if (!apiKey) {
-        console.error("[SERVER_ERROR] 服务端错误：未在环境变量中配置GAODE_API_KEY");
-        return response.status(500).json({ message: '服务器配置错误' });
+        console.error("Server Error: GAODE_API_KEY is not configured in Vercel environment variables.");
+        return res.status(500).json({ error: '服务器错误：API Key未配置' });
     }
-    
+
+    if (!address || address.trim() === '') {
+        return res.status(400).json({ error: '查询错误：地址不能为空' });
+    }
+
     try {
         // --- 步骤 1: 关键字搜索，获取经纬度 ---
         const textSearchUrl = `https://restapi.amap.com/v3/place/text?key=${apiKey}&keywords=${encodeURIComponent(address)}&offset=1&page=1`;
-        const textSearchResponse = await fetch(textSearchUrl);
-        const textSearchData = await textSearchResponse.json();
+        const textRes = await fetch(textSearchUrl);
+        const textData = await textRes.json();
 
-        if (textSearchData.status !== '1' || !textSearchData.pois || textSearchData.pois.length === 0) {
-            return response.status(200).json({ completedAddress: "未能查询到该地址，请尝试更正或细化地址。" });
+        if (textData.status !== '1' || !textData.pois || textData.pois.length === 0) {
+            return res.status(200).json({ result: "查询失败：未找到匹配的POI" });
         }
 
-        const poi = textSearchData.pois[0];
-        const location = poi.location; // 获取经纬度
+        const poi = textData.pois[0];
+        const location = poi.location;
 
         if (!location) {
-            const simpleAddress = `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''} ${poi.address || ''}`;
-            return response.status(200).json({ completedAddress: simpleAddress.trim() });
+            const fallbackResult = `${poi.pname || ''}${poi.cityname || ''}${poi.adname || ''} ${poi.address || ''}`.trim();
+            return res.status(200).json({ result: fallbackResult });
         }
 
-        // --- 步骤 2: 逆地理编码，获取包含街道的结构化地址 ---
+        // --- 步骤 2: 逆地理编码，获取结构化地址 ---
         const regeoUrl = `https://restapi.amap.com/v3/geocode/regeo?key=${apiKey}&location=${location}`;
-        const regeoResponse = await fetch(regeoUrl);
-        const regeoData = await regeoResponse.json();
+        const regeoRes = await fetch(regeoUrl);
+        const regeoData = await regeoRes.json();
 
         if (regeoData.status !== '1' || !regeoData.regeocode) {
-            throw new Error('逆地理编码失败');
+            return res.status(200).json({ result: "查询失败：逆地理编码失败" });
         }
-
-        const regeocode = regeoData.regeocode;
-        const addressComponent = regeocode.addressComponent;
         
-        // --- 步骤 3: 智能拼接最终地址 (优化版) ---
-        // 目标：补全官方的省市区街道，并与用户输入的具体地址无缝衔接，避免重复。
-        const province = addressComponent.province || '';
-        const city = Array.isArray(addressComponent.city) ? (province) : (addressComponent.city || '');
-        const district = addressComponent.district || '';
-        const township = addressComponent.township || '';
+        const addrComp = regeoData.regeocode.addressComponent;
 
-        // 从用户原始输入中，移除已知的省、市、区信息，得到最纯粹的详细地址。
+        // --- 步骤 3: 智能拼接最终地址 ---
+        const province = addrComp.province || "";
+        const city = (typeof addrComp.city === 'string' && addrComp.city) ? addrComp.city : province;
+        
+        // --- 关键修复点：检查 district 和 township 是否为字符串，否则视为空 ---
+        const district = (typeof addrComp.district === 'string' && addrComp.district) ? addrComp.district : "";
+        const township = (typeof addrComp.township === 'string' && addrComp.township) ? addrComp.township : "";
+
         let detailedAddress = address.trim();
 
+        // 移除前缀函数
         const removePrefix = (text, prefix) => {
             if (prefix && text.startsWith(prefix)) {
                 return text.substring(prefix.length);
@@ -70,21 +81,17 @@ module.exports = async (request, response) => {
         detailedAddress = removePrefix(detailedAddress, city);
         detailedAddress = removePrefix(detailedAddress, district);
         detailedAddress = removePrefix(detailedAddress, township);
+        if (city) detailedAddress = removePrefix(detailedAddress, city.replace('市', ''));
+        if (district) detailedAddress = removePrefix(detailedAddress, district.replace(/[区县市]/g, ''));
 
-        // 有些用户输入可能不带单位，比如输入"盐城东进路"，API返回"盐城市"，也需要移除
-        detailedAddress = removePrefix(detailedAddress, city.replace('市', ''));
-        detailedAddress = removePrefix(detailedAddress, district.replace(/[区县市]/g, ''));
-
-
-        // 组合成最终地址
         const officialPart = `${province}${city}${district}${township}`;
         const finalAddress = `${officialPart} ${detailedAddress.trim()}`.trim();
 
-        return response.status(200).json({ completedAddress: finalAddress });
+        res.status(200).json({ result: finalAddress });
 
     } catch (error) {
-        console.error("[API_CATCH_ERROR] 调用高德API时捕获到异常:", error);
-        return response.status(500).json({ message: '服务器内部错误，无法连接地图服务。' });
+        console.error('Backend Error:', error);
+        res.status(500).json({ error: '服务器内部错误，请检查后台日志。', details: error.message });
     }
 };
 
