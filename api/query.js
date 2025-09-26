@@ -1,6 +1,5 @@
 // Vercel Serverless Function
-// 引入 fetch，如果在 Node.js 18+ 环境中可以不写，但为了兼容性写上更稳妥
-const fetch = require('node-fetch');
+// 在 Node.js 18+ 环境中, fetch 是全局可用的, 无需引入
 
 // 使用 module.exports 以确保与 Vercel 的 Node.js 环境最大兼容
 module.exports = async (req, res) => {
@@ -62,7 +61,6 @@ module.exports = async (req, res) => {
         const province = addrComp.province || "";
         const city = (typeof addrComp.city === 'string' && addrComp.city) ? addrComp.city : province;
         
-        // --- 关键修复点：检查 district 和 township 是否为字符串，否则视为空 ---
         const district = (typeof addrComp.district === 'string' && addrComp.district) ? addrComp.district : "";
         const township = (typeof addrComp.township === 'string' && addrComp.township) ? addrComp.township : "";
 
