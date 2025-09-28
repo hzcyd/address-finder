@@ -22,30 +22,57 @@ module.exports = async (request, response) => {
         return response.status(500).json({ message: '服务器配置错误' });
     }
     
-    // 4. 构建请求高德API的URL
-    const gaodeUrl = `https://restapi.amap.com/v3/place/text?key=${apiKey}&keywords=${encodeURIComponent(address)}&offset=1&page=1`;
+    // 4. 构建请求高德API的URL - 使用地理编码API，更适合地址查询
+    const gaodeUrl = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=${encodeURIComponent(address)}`;
 
     try {
         // 5. 从后端服务器发起对高德的请求
         const apiResponse = await fetch(gaodeUrl);
         const data = await apiResponse.json();
 
+        console.log('高德API响应:', JSON.stringify(data, null, 2)); // 添加调试日志
+
         // 6. 处理高德返回的数据
-        if (data.status === '1' && data.pois && data.pois.length > 0) {
-            const poi = data.pois[0]; // 取最匹配的结果
-            const province = poi.pname || ''; // 省
-            const city = poi.cityname || ''; // 市
-            const district = poi.adname || '';   // 区
-            const detailAddress = poi.address || ''; // 详细地址（通常是街道和门牌号）
+        if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
+            const geocode = data.geocodes[0]; // 取最匹配的结果
+            const province = geocode.province || ''; // 省
+            const city = geocode.city || ''; // 市
+            const district = geocode.district || '';   // 区
+            const formattedAddress = geocode.formatted_address || ''; // 格式化地址
 
-            const completedAddress = `${province}${city}${district} ${detailAddress}`;
+            // 如果地理编码API返回了完整地址，直接使用
+            if (formattedAddress) {
+                return response.status(200).json({ completedAddress: formattedAddress });
+            }
 
-            // 7. 将处理好的结果返回给前端
+            // 否则组合行政区划信息
+            const completedAddress = `${province}${city}${district}`;
             return response.status(200).json({ completedAddress: completedAddress.trim() });
 
         } else {
-            // 如果高德未返回有效结果
-            return response.status(200).json({ completedAddress: "未能查询到该地址的区划信息，请尝试更正地址。" });
+            // 如果地理编码API没有结果，尝试使用POI搜索API作为备选
+            console.log('地理编码API无结果，尝试POI搜索API');
+            const poiUrl = `https://restapi.amap.com/v3/place/text?key=${apiKey}&keywords=${encodeURIComponent(address)}&offset=1&page=1`;
+            const poiResponse = await fetch(poiUrl);
+            const poiData = await poiResponse.json();
+
+            console.log('POI API响应:', JSON.stringify(poiData, null, 2)); // 添加调试日志
+
+            if (poiData.status === '1' && poiData.pois && poiData.pois.length > 0) {
+                const poi = poiData.pois[0];
+                const province = poi.pname || '';
+                const city = poi.cityname || '';
+                const district = poi.adname || '';
+                const detailAddress = poi.address || '';
+
+                const completedAddress = `${province}${city}${district} ${detailAddress}`;
+                return response.status(200).json({ completedAddress: completedAddress.trim() });
+            }
+
+            // 如果两个API都没有结果
+            return response.status(200).json({ 
+                completedAddress: "未能查询到该地址的区划信息，请尝试更正地址或使用更通用的地址描述。" 
+            });
         }
 
     } catch (error) {
