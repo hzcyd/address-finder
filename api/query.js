@@ -84,11 +84,11 @@ class AddressCompleter {
             confidence: 100
         },
         '北城一号': {
-            fullAddress: '四川省成都市金牛区西华街道北城一号西门',
+            fullAddress: '四川省成都市新都区北城一号西门',
             province: '四川省',
             city: '成都市',
-            district: '金牛区',
-            township: '西华街道',
+            district: '新都区',
+            township: '', // 新都区的街道信息需要通过高德API获取
             detail: '北城一号西门',
             confidence: 100
         }
@@ -344,7 +344,8 @@ class AddressBuilder {
             address += district;
         }
 
-        if (township && !address.includes(township)) {
+        // 街道信息是可选的，只有在有值且不重复时才添加
+        if (township && township.trim() && !address.includes(township)) {
             address += township;
         }
 
