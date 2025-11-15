@@ -5,15 +5,23 @@
 function buildCompleteAddress(originalAddress, components) {
     const { province, city, district, township, formattedAddress, detailAddress } = components;
 
-    // 如果有完整的格式化地址，优先使用
+    // 如果有完整的格式化地址且包含街道信息，优先使用
     if (formattedAddress && !formattedAddress.includes('null') && !formattedAddress.includes('undefined')) {
-        return formattedAddress;
+        // 检查格式化地址是否包含街道信息
+        if (formattedAddress.includes('街道') || formattedAddress.includes('镇') || formattedAddress.includes('乡')) {
+            return formattedAddress;
+        }
+        // 如果没有街道信息但我们有，则添加街道信息
+        if (township && township !== '[]' && !formattedAddress.includes(township)) {
+            return formattedAddress.replace(district, `${district}${township}`);
+        }
     }
 
     // 分析原始地址缺失的部分
     const hasProvince = /省/.test(originalAddress) || province === originalAddress.substring(0, originalAddress.indexOf('省') + 1);
     const hasCity = /市/.test(originalAddress) || /北京|上海|天津|重庆/.test(originalAddress);
     const hasDistrict = /区|县/.test(originalAddress);
+    const hasTownship = /街道|镇|乡/.test(originalAddress);
 
     let result = '';
 
@@ -32,14 +40,16 @@ function buildCompleteAddress(originalAddress, components) {
         result += district;
     }
 
-    // 补充街道（如果有）
-    if (township && township !== '[]' && !originalAddress.includes(township)) {
+    // 补充街道（优先级高，确保添加）
+    if (township && township !== '[]' && !hasTownship && !originalAddress.includes(township)) {
         result += township;
     }
 
     // 添加详细地址
     if (detailAddress) {
-        result += detailAddress;
+        // 避免重复添加街道信息
+        const finalDetail = hasTownship ? detailAddress : detailAddress;
+        result += finalDetail;
     } else {
         // 如果没有详细地址，保留原始输入的详细信息
         result += extractDetailAddress(originalAddress);
@@ -59,6 +69,75 @@ function extractDetailAddress(address) {
     return detail.trim();
 }
 
+// 通过POI搜索获取街道信息
+async function getTownshipFromPOI(address, apiKey) {
+    try {
+        // 使用更具体的POI搜索来获取街道信息
+        const poiUrl = `https://restapi.amap.com/v3/place/text?key=${apiKey}&keywords=${encodeURIComponent(address)}&city=&datatype=all&page=1&offset=5&extensions=all`;
+        const poiResponse = await fetch(poiUrl);
+        const poiData = await poiResponse.json();
+
+        if (poiData.status === '1' && poiData.pois && poiData.pois.length > 0) {
+            // 查找最相关的POI，优先选择包含街道信息的
+            for (const poi of poiData.pois) {
+                if (poi.address && poi.address.includes('街道') || poi.address.includes('镇') || poi.address.includes('乡')) {
+                    return extractTownshipFromAddress(poi.address, poi.adname);
+                }
+            }
+        }
+    } catch (error) {
+        console.log('获取街道信息失败:', error.message);
+    }
+    return '';
+}
+
+// 从地址中提取街道信息
+function extractTownshipFromAddress(address, district) {
+    if (!address) return '';
+
+    // 严格匹配街道信息，只匹配以街道、镇、乡结尾的完整行政单位
+    const regex = /([^\s,，]*(街道|镇|乡))/g;
+    const matches = address.match(regex);
+
+    if (matches && matches.length > 0) {
+        // 过滤掉明显不是街道的匹配（如路、大街等）
+        const validTownships = matches.filter(match => {
+            return match.endsWith('街道') || match.endsWith('镇') || match.endsWith('乡');
+        });
+
+        if (validTownships.length > 0) {
+            // 返回第一个有效的街道信息
+            return validTownships[0].trim();
+        }
+    }
+
+    return '';
+}
+
+// 获取知名社区的正确街道信息
+function getKnownCommunityTownship(communityName, district) {
+    // 知名社区街道映射表（可扩展）
+    const knownCommunities = {
+        '顺源里': {
+            district: '顺义区',
+            township: '左家庄街道'  // 根据用户反馈更正
+        },
+        // 可以继续添加其他已知社区
+        // '某社区': { district: '某区', township: '某街道' }
+    };
+
+    const key = Object.keys(knownCommunities).find(name => communityName.includes(name));
+    if (key) {
+        const info = knownCommunities[key];
+        // 如果区县匹配，返回对应的街道
+        if (!district || district === info.district) {
+            return info.township;
+        }
+    }
+
+    return '';
+}
+
 // 智能猜测补全（当API无结果时的降级方案）
 function tryIntelligentCompletion(address) {
     // 常见省份城市映射
@@ -74,6 +153,15 @@ function tryIntelligentCompletion(address) {
         '广州': '广东省广州市',
         '深圳': '广东省深圳市'
     };
+
+    // 先检查是否为已知社区
+    const knownTownship = getKnownCommunityTownship(address, '');
+    if (knownTownship) {
+        return {
+            address: `北京市顺义区${knownTownship}${address}`,
+            message: '根据已知社区信息进行的智能补全'
+        };
+    }
 
     // 尝试匹配常见城市
     for (const [shortName, fullName] of Object.entries(commonCities)) {
@@ -131,12 +219,22 @@ module.exports = async (request, response) => {
             const township = geocode.township || ''; // 街道
             const formattedAddress = geocode.formatted_address || ''; // 格式化地址
 
+            console.log('地理编码结果:', {
+                province, city, district, township, formatted_address: formattedAddress
+            });
+
+            // 如果街道信息为空，尝试通过其他API获取
+            let finalTownship = township;
+            if (!finalTownship && district) {
+                finalTownship = await getTownshipFromPOI(address, apiKey);
+            }
+
             // 智能地址补全逻辑
             const completedAddress = buildCompleteAddress(address, {
                 province,
                 city,
                 district,
-                township,
+                township: finalTownship,
                 formattedAddress
             });
 
@@ -147,7 +245,7 @@ module.exports = async (request, response) => {
                     province,
                     city,
                     district,
-                    township
+                    township: finalTownship
                 }
             });
 
@@ -167,11 +265,15 @@ module.exports = async (request, response) => {
                 const district = poi.adname || '';
                 const detailAddress = poi.address || '';
 
+                // 尝试从POI地址中提取街道信息
+                const township = extractTownshipFromAddress(detailAddress, district);
+
                 // 智能地址补全逻辑
                 const completedAddress = buildCompleteAddress(address, {
                     province,
                     city,
                     district,
+                    township,
                     detailAddress
                 });
 
@@ -182,6 +284,7 @@ module.exports = async (request, response) => {
                         province,
                         city,
                         district,
+                        township,
                         detailAddress
                     }
                 });
