@@ -132,17 +132,111 @@ h1 {
     background-color: #f6f6f7;
     border-radius: 12px;
     padding: 4px;
-    min-height: 60px;
+    min-height: 80px;
     margin-top: 2rem;
 }
 
 #result {
     padding: 1.25rem;
+}
+
+.result-container {
     font-size: 1.05rem;
     color: var(--text-primary);
     text-align: left;
     word-wrap: break-word;
     font-weight: 500;
+}
+
+.result-success {
+    color: var(--text-primary);
+}
+
+.result-warning {
+    color: #d97706;
+}
+
+.result-error {
+    color: #dc2626;
+}
+
+.result-loading {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.address-text {
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+}
+
+.copy-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    background-color: white;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 0.75rem;
+}
+
+.copy-button:hover {
+    background-color: var(--background-color);
+    border-color: var(--brand-color);
+    color: var(--brand-color);
+}
+
+.copy-button.copied {
+    background-color: #10b981;
+    border-color: #10b981;
+    color: white;
+}
+
+.components-info {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.components-title {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    font-weight: 400;
+}
+
+.components-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.component-tag {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background-color: #e0e7ff;
+    color: #3730a3;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 12px;
+    line-height: 1.2;
+}
+
+.warning-info {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background-color: #fef3c7;
+    color: #92400e;
+    font-size: 0.9rem;
+    font-weight: 400;
+    border-radius: 8px;
+    line-height: 1.4;
 }
 
 footer {
