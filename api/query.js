@@ -82,6 +82,15 @@ class AddressCompleter {
             township: '左家庄街道',
             detail: '静安里社区',
             confidence: 100
+        },
+        '北城一号': {
+            fullAddress: '四川省成都市金牛区西华街道北城一号西门',
+            province: '四川省',
+            city: '成都市',
+            district: '金牛区',
+            township: '西华街道',
+            detail: '北城一号西门',
+            confidence: 100
         }
     };
 
@@ -150,25 +159,54 @@ class AddressCompleter {
      * @returns {Object} API结果
      */
     static async queryGaodeAPI(address, apiKey) {
-        // 构建优化的API请求URL
-        const url = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=${encodeURIComponent(address)}&output=json`;
+        // 构建优化的API请求URL，添加城市参数提高准确性
+        let url = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=${encodeURIComponent(address)}&output=json`;
+
+        // 如果地址包含省信息，添加city参数
+        if (address.includes('成都市')) {
+            url += '&city=成都市';
+        } else if (address.includes('北京')) {
+            url += '&city=北京市';
+        } else if (address.includes('上海')) {
+            url += '&city=上海市';
+        }
 
         console.log('请求高德API:', url);
 
         const response = await fetch(url);
         const data = await response.json();
 
-        console.log('高德API原始响应:', data);
+        console.log('高德API完整响应:', JSON.stringify(data, null, 2));
 
         if (data.status !== '1') {
             throw new Error(`高德API错误: ${data.info}`);
         }
 
         if (!data.geocodes || data.geocodes.length === 0) {
+            console.log('高德API无匹配结果');
             return { isValid: false };
         }
 
         const geocode = data.geocodes[0];
+        console.log('选中的地理编码结果:', geocode);
+
+        // 检查关键字段是否为空
+        const hasProvince = !!geocode.province;
+        const hasCity = !!geocode.city;
+        const hasDistrict = !!geocode.district;
+        const hasTownship = !!geocode.township;
+
+        console.log('地址组件完整性检查:', {
+            hasProvince: hasProvince,
+            province: geocode.province,
+            hasCity: hasCity,
+            city: geocode.city,
+            hasDistrict: hasDistrict,
+            district: geocode.district,
+            hasTownship: hasTownship,
+            township: geocode.township,
+            formatted_address: geocode.formatted_address
+        });
 
         // 构建标准化结果
         const components = {
@@ -180,6 +218,9 @@ class AddressCompleter {
         };
 
         const fullAddress = AddressBuilder.build(components);
+
+        console.log('构建的完整地址:', fullAddress);
+        console.log('地址组件:', components);
 
         return {
             isValid: true,
