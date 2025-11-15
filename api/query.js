@@ -143,6 +143,8 @@ function getKnownCommunityTownship(communityName, district) {
 
 // 智能猜测补全（当API无结果时的降级方案）
 function tryIntelligentCompletion(address) {
+    console.log('进入智能补全逻辑，地址:', address);
+
     // 常见省份城市映射
     const commonCities = {
         '北京': '北京市',
@@ -157,30 +159,31 @@ function tryIntelligentCompletion(address) {
         '深圳': '广东省深圳市'
     };
 
-    // 先检查是否为已知社区
-    const knownTownship = getKnownCommunityTownship(address, '');
-    if (knownTownship) {
-        const knownCommunity = Object.keys(knownCommunities).find(name => address.includes(name));
-        if (knownCommunity) {
-            const info = knownCommunities[knownCommunity];
-            const fullAddress = `北京市${info.district}${info.township}${address}`;
-            return {
-                address: fullAddress,
-                message: '根据已知社区信息进行的智能补全'
-            };
-        }
+    // 先检查是否为已知社区 - 直接使用全局knownCommunities
+    const knownCommunity = Object.keys(knownCommunities).find(name => address.includes(name));
+    if (knownCommunity) {
+        const info = knownCommunities[knownCommunity];
+        const fullAddress = `北京市${info.district}${info.township}${address}`;
+        console.log('已知社区补全:', fullAddress);
+        return {
+            address: fullAddress,
+            message: '根据已知社区信息进行的智能补全'
+        };
     }
 
     // 尝试匹配常见城市
     for (const [shortName, fullName] of Object.entries(commonCities)) {
         if (address.includes(shortName) && !address.includes('省') && !address.includes('市')) {
+            const result = fullName + address.replace(shortName, '');
+            console.log('常见城市补全:', result);
             return {
-                address: fullName + address.replace(shortName, ''),
+                address: result,
                 message: '根据常见城市名称进行的智能补全'
             };
         }
     }
 
+    console.log('无匹配结果，返回原地址');
     return {
         address: address,
         message: '未能查询到该地址的区划信息，请尝试更正地址或使用更通用的地址描述。'
@@ -244,6 +247,11 @@ module.exports = async (request, response) => {
                 district,
                 township: finalTownship,
                 formattedAddress
+            });
+
+            console.log('补全结果:', {
+                completedAddress,
+                components: { province, city, district, township: finalTownship }
             });
 
             return response.status(200).json({
