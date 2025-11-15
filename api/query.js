@@ -105,6 +105,42 @@ class AddressCompleter {
     // 已禁用已知社区映射功能，完全依赖高德API
 
     /**
+     * 智能提取详细地址（去除已包含的行政区划）
+     * @param {string} originalAddress - 原始地址
+     * @param {Object} adminDivisions - 行政区划信息
+     * @returns {string} 提取的详细地址
+     */
+    static extractDetailAddress(originalAddress, adminDivisions) {
+        const { province, city, district } = adminDivisions;
+        let detail = originalAddress;
+
+        console.log('原始地址:', originalAddress);
+        console.log('行政区划:', { province, city, district });
+
+        // 按照从大到小的顺序去除已包含的行政区划
+        if (province && detail.includes(province)) {
+            detail = detail.replace(province, '');
+            console.log(`去除省份: ${province}`);
+        }
+
+        if (city && detail.includes(city)) {
+            detail = detail.replace(city, '');
+            console.log(`去除城市: ${city}`);
+        }
+
+        if (district && detail.includes(district)) {
+            detail = detail.replace(district, '');
+            console.log(`去除区县: ${district}`);
+        }
+
+        // 清理结果
+        detail = detail.trim().replace(/^[、,，\s]+/, '');
+
+        console.log('提取的详细地址:', detail);
+        return detail;
+    }
+
+    /**
      * 智能选择最匹配的地理编码结果
      * @param {Array} geocodes - 地理编码结果数组
      * @param {string} address - 原始查询地址
@@ -208,6 +244,13 @@ class AddressCompleter {
             formatted_address: geocode.formatted_address
         });
 
+        // 智能提取详细信息（去除已包含的行政区划）
+        const detailAddress = this.extractDetailAddress(address, {
+            province: geocode.province,
+            city: geocode.city,
+            district: geocode.district
+        });
+
         // 构建标准化结果，处理数组和字符串类型
         const components = {
             province: geocode.province || '',
@@ -216,7 +259,7 @@ class AddressCompleter {
             township: Array.isArray(geocode.township) ?
                 (geocode.township.length > 0 ? geocode.township[0] : '') :
                 (geocode.township || ''),
-            detail: address
+            detail: detailAddress
         };
 
         const fullAddress = AddressBuilder.build(components);
