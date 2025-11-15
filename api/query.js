@@ -63,36 +63,8 @@ module.exports = async (request, response) => {
  * 地址补全器 - 核心业务逻辑
  */
 class AddressCompleter {
-    // 已知社区准确信息映射
-    static KNOWN_COMMUNITIES = {
-        '顺源里': {
-            fullAddress: '北京市朝阳区左家庄街道顺源里社区',
-            province: '北京市',
-            city: '北京市',
-            district: '朝阳区',
-            township: '左家庄街道',
-            detail: '顺源里社区',
-            confidence: 100
-        },
-        '静安里': {
-            fullAddress: '北京市朝阳区左家庄街道静安里社区',
-            province: '北京市',
-            city: '北京市',
-            district: '朝阳区',
-            township: '左家庄街道',
-            detail: '静安里社区',
-            confidence: 100
-        },
-        '北城一号': {
-            fullAddress: '四川省成都市新都区北城一号西门',
-            province: '四川省',
-            city: '成都市',
-            district: '新都区',
-            township: '', // 新都区的街道信息需要通过高德API获取
-            detail: '北城一号西门',
-            confidence: 100
-        }
-    };
+    // 禁用已知社区映射，完全依赖高德API查询
+    // static KNOWN_COMMUNITIES = {};
 
     /**
      * 补全地址信息
@@ -104,17 +76,9 @@ class AddressCompleter {
         // 1. 预处理：去除多余空格和特殊字符
         const cleanAddress = AddressCleaner.clean(address);
 
-        // 2. 检查已知社区映射
-        const knownResult = this.checkKnownCommunity(cleanAddress);
-        if (knownResult) {
-            return {
-                ...knownResult,
-                method: 'known_mapping',
-                confidence: 100
-            };
-        }
+        console.log('使用高德API查询地址:', cleanAddress);
 
-        // 3. 尝试高德API
+        // 2. 直接调用高德API（禁用预设映射）
         try {
             const apiResult = await this.queryGaodeAPI(cleanAddress, apiKey);
             if (apiResult.isValid) {
@@ -128,29 +92,17 @@ class AddressCompleter {
             console.log('高德API调用失败:', error.message);
         }
 
-        // 4. 智能降级处理
+        // 3. 如果高德API无结果，尝试智能降级处理
+        console.log('高德API无结果，执行智能降级处理');
         const fallbackResult = this.fallbackCompletion(cleanAddress);
         return {
             ...fallbackResult,
             method: 'intelligent_fallback',
-            confidence: 50
+            confidence: 30
         };
     }
 
-    /**
-     * 检查已知社区映射
-     * @param {string} address - 清理后的地址
-     * @returns {Object|null} 映射结果
-     */
-    static checkKnownCommunity(address) {
-        for (const [communityName, info] of Object.entries(this.KNOWN_COMMUNITIES)) {
-            if (address.includes(communityName)) {
-                console.log(`匹配到已知社区: ${communityName}`);
-                return info;
-            }
-        }
-        return null;
-    }
+    // 已禁用已知社区映射功能，完全依赖高德API
 
     /**
      * 查询高德API
