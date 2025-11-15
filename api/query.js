@@ -105,6 +105,53 @@ class AddressCompleter {
     // 已禁用已知社区映射功能，完全依赖高德API
 
     /**
+     * 智能选择最匹配的地理编码结果
+     * @param {Array} geocodes - 地理编码结果数组
+     * @param {string} address - 原始查询地址
+     * @returns {Object} 最佳匹配结果
+     */
+    static selectBestMatch(geocodes, address) {
+        console.log(`从${geocodes.length}个结果中选择最佳匹配`);
+
+        // 计算每个结果的匹配分数
+        const scored = geocodes.map(geocode => {
+            let score = 0;
+
+            // 优先级1: 包含完整查询地址
+            if (geocode.formatted_address.includes(address)) {
+                score += 100;
+            }
+
+            // 优先级2: 匹配度评估
+            const addressParts = address.split(/[省市区县镇乡街道]/);
+            for (const part of addressParts) {
+                if (part.trim() && geocode.formatted_address.includes(part.trim())) {
+                    score += 20;
+                }
+            }
+
+            // 优先级3: 级别评分
+            if (geocode.level === '精确') score += 50;
+            else if (geocode.level === '匹配') score += 30;
+            else if (geocode.level === '住宅区') score += 20;
+            else if (geocode.level === '区县') score += 10;
+
+            return { geocode, score };
+        });
+
+        // 按分数排序，选择最高分
+        scored.sort((a, b) => b.score - a.score);
+
+        console.log('匹配分数排序:', scored.map(s => ({
+            address: s.geocode.formatted_address,
+            level: s.geocode.level,
+            score: s.score
+        })));
+
+        return scored[0].geocode;
+    }
+
+    /**
      * 查询高德API
      * @param {string} address - 地址
      * @param {string} apiKey - API密钥
@@ -139,7 +186,8 @@ class AddressCompleter {
             return { isValid: false };
         }
 
-        const geocode = data.geocodes[0];
+        // 智能选择最匹配的地理编码结果
+        const geocode = this.selectBestMatch(data.geocodes, address);
         console.log('选中的地理编码结果:', geocode);
 
         // 检查关键字段是否为空
@@ -160,12 +208,14 @@ class AddressCompleter {
             formatted_address: geocode.formatted_address
         });
 
-        // 构建标准化结果
+        // 构建标准化结果，处理数组和字符串类型
         const components = {
             province: geocode.province || '',
             city: geocode.city || '',
             district: geocode.district || '',
-            township: geocode.township || '',
+            township: Array.isArray(geocode.township) ?
+                (geocode.township.length > 0 ? geocode.township[0] : '') :
+                (geocode.township || ''),
             detail: address
         };
 
@@ -297,7 +347,7 @@ class AddressBuilder {
         }
 
         // 街道信息是可选的，只有在有值且不重复时才添加
-        if (township && township.trim() && !address.includes(township)) {
+        if (township && typeof township === 'string' && township.trim() && !address.includes(township)) {
             address += township;
         }
 
