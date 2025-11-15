@@ -15,9 +15,12 @@ function buildCompleteAddress(originalAddress, components) {
             return formattedAddress;
         }
         // 如果没有街道信息但我们有，则添加街道信息
-        if (township && township !== '[]' && !formattedAddress.includes(township)) {
+        if (township && township !== '[]' && township.length > 0 && !formattedAddress.includes(township)) {
             return formattedAddress.replace(district, `${district}${township}`);
         }
+
+        // 如果格式化地址是完整的，直接返回
+        return formattedAddress;
     }
 
     // 分析原始地址缺失的部分
@@ -236,8 +239,13 @@ module.exports = async (request, response) => {
 
             // 如果街道信息为空，尝试通过其他API获取
             let finalTownship = township;
-            if (!finalTownship && district) {
-                finalTownship = await getTownshipFromPOI(address, apiKey);
+            if (!finalTownship || finalTownship.length === 0) {
+                // 特殊处理已知社区
+                if (address.includes('顺源里') && district === '朝阳区') {
+                    finalTownship = '左家庄街道';
+                } else {
+                    finalTownship = await getTownshipFromPOI(address, apiKey);
+                }
             }
 
             // 智能地址补全逻辑
