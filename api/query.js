@@ -5,8 +5,11 @@
 function buildCompleteAddress(originalAddress, components) {
     const { province, city, district, township, formattedAddress, detailAddress } = components;
 
-    // 如果有完整的格式化地址且包含街道信息，优先使用
-    if (formattedAddress && !formattedAddress.includes('null') && !formattedAddress.includes('undefined')) {
+    // 只有当格式化地址是完整地址（包含省市行政区划）时才使用
+    if (formattedAddress && !formattedAddress.includes('null') && !formattedAddress.includes('undefined') &&
+        (formattedAddress.includes('省') || formattedAddress.includes('北京市') || formattedAddress.includes('上海市') ||
+         formattedAddress.includes('天津市') || formattedAddress.includes('重庆市'))) {
+
         // 检查格式化地址是否包含街道信息
         if (formattedAddress.includes('街道') || formattedAddress.includes('镇') || formattedAddress.includes('乡')) {
             return formattedAddress;
@@ -157,10 +160,15 @@ function tryIntelligentCompletion(address) {
     // 先检查是否为已知社区
     const knownTownship = getKnownCommunityTownship(address, '');
     if (knownTownship) {
-        return {
-            address: `北京市顺义区${knownTownship}${address}`,
-            message: '根据已知社区信息进行的智能补全'
-        };
+        const knownCommunity = Object.keys(knownCommunities).find(name => address.includes(name));
+        if (knownCommunity) {
+            const info = knownCommunities[knownCommunity];
+            const fullAddress = `北京市${info.district}${info.township}${address}`;
+            return {
+                address: fullAddress,
+                message: '根据已知社区信息进行的智能补全'
+            };
+        }
     }
 
     // 尝试匹配常见城市
