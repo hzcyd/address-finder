@@ -125,8 +125,12 @@ function getKnownCommunityTownship(communityName, district) {
     // 知名社区街道映射表（可扩展）
     const knownCommunities = {
         '顺源里': {
-            district: '顺义区',
-            township: '左家庄街道'  // 根据用户反馈更正
+            district: '朝阳区',  // 更正为朝阳区
+            township: '左家庄街道'
+        },
+        '静安里': {
+            district: '朝阳区',
+            township: '左家庄街道'
         },
         // 可以继续添加其他已知社区
         // '某社区': { district: '某区', township: '某街道' }
@@ -214,8 +218,13 @@ module.exports = async (request, response) => {
         return response.status(500).json({ message: '服务器配置错误' });
     }
     
-    // 4. 构建请求高德API的URL - 使用地理编码API，更适合地址查询
-    const gaodeUrl = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=${encodeURIComponent(address)}`;
+    // 4. 先尝试精确搜索（包含城市上下文）
+    let gaodeUrl = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=${encodeURIComponent(address)}`;
+
+    // 如果是北京知名的社区，添加城市上下文提高准确性
+    if (address.includes('顺源里') || address.includes('静安里')) {
+        gaodeUrl = `https://restapi.amap.com/v3/geocode/geo?key=${apiKey}&address=北京市朝阳区${encodeURIComponent(address)}&city=北京市`;
+    }
 
     try {
         // 5. 从后端服务器发起对高德的请求
@@ -227,21 +236,30 @@ module.exports = async (request, response) => {
         // 6. 处理高德返回的数据
         if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
             const geocode = data.geocodes[0]; // 取最匹配的结果
-            const province = geocode.province || ''; // 省
-            const city = geocode.city || ''; // 市
-            const district = geocode.district || '';   // 区
+            let province = geocode.province || ''; // 省
+            let city = geocode.city || ''; // 市
+            let district = geocode.district || '';   // 区
             const township = geocode.township || ''; // 街道
-            const formattedAddress = geocode.formatted_address || ''; // 格式化地址
+            let formattedAddress = geocode.formatted_address || ''; // 格式化地址
 
             console.log('地理编码结果:', {
                 province, city, district, township, formatted_address: formattedAddress
             });
 
+            // 验证高德API结果的准确性，对于知名社区进行校正
+            if ((address.includes('顺源里') || address.includes('静安里')) && district === '通州区') {
+                console.log('检测到高德API返回错误区域，使用已知社区信息进行校正');
+                district = '朝阳区';
+                province = '北京市';
+                city = '北京市';
+                formattedAddress = `北京市朝阳区左家庄街道${address}`;
+            }
+
             // 如果街道信息为空，尝试通过其他API获取
             let finalTownship = township;
             if (!finalTownship || finalTownship.length === 0) {
                 // 特殊处理已知社区
-                if (address.includes('顺源里') && district === '朝阳区') {
+                if ((address.includes('顺源里') || address.includes('静安里')) && district === '朝阳区') {
                     finalTownship = '左家庄街道';
                 } else {
                     finalTownship = await getTownshipFromPOI(address, apiKey);
